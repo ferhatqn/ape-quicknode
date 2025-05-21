@@ -1,7 +1,9 @@
 from functools import cached_property
 from typing import Any, Optional
+
 from ape_ethereum.trace import TraceApproach, TransactionTrace
 from hexbytes import HexBytes
+
 
 class QuickNodeTransactionTrace(TransactionTrace):
     call_trace_approach: TraceApproach = TraceApproach.PARITY

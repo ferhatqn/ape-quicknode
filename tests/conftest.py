@@ -1,23 +1,31 @@
 import os
+from typing import TYPE_CHECKING
+
 import pytest
 from ape import accounts as ape_accounts
 from ape import networks as ape_networks
-from ape_quicknode.provider import QuickNode
 from requests import HTTPError, Response
 from web3 import Web3
+
+if TYPE_CHECKING:
+    from ape_quicknode.provider import QuickNode
+
 
 @pytest.fixture
 def accounts():
     return ape_accounts
 
+
 @pytest.fixture
 def networks():
     return ape_networks
+
 
 @pytest.fixture
 def missing_token(monkeypatch):
     monkeypatch.delenv("QUICKNODE_SUBDOMAIN", raising=False)
     monkeypatch.delenv("QUICKNODE_AUTH_TOKEN", raising=False)
+
 
 @pytest.fixture
 def token(mocker):
@@ -35,12 +43,14 @@ def token(mocker):
     mock.side_effect = side_effect
     return mock
 
+
 @pytest.fixture
 def mock_web3(mocker):
     mock = mocker.MagicMock(spec=Web3)
     mock.eth = mocker.MagicMock()
     mock.middleware_onion = mocker.MagicMock()
     return mock
+
 
 @pytest.fixture
 def transaction(accounts, networks):
@@ -50,14 +60,18 @@ def transaction(accounts, networks):
         receipt = sender.transfer(receiver, "1 gwei")
         return receipt.transaction
 
+
 @pytest.fixture
 def txn_hash():
     return "0x55d07ce5e3f4f5742f3318cf328d700e43ee8cdb46000f2ac731a9379fca8ea7"
 
-@pytest.fixture(params=[
-    "This feature is not available on your current plan. Please upgrade to access this functionality.",
-    "This feature is not supported on the current network."
-])
+
+@pytest.fixture(
+    params=[
+        "This feature is not available on your current plan. Please upgrade to access this functionality.",
+        "This feature is not supported on the current network.",
+    ]
+)
 def feature_not_available_http_error(mocker, request):
     response = mocker.MagicMock(spec=Response)
     response.fixture_param = request.param
@@ -65,6 +79,7 @@ def feature_not_available_http_error(mocker, request):
     error = HTTPError(response=response)
     return error
 
+
 @pytest.fixture
-def quicknode_provider(networks) -> QuickNode:
+def quicknode_provider(networks) -> "QuickNode":
     return networks.ethereum.mainnet.get_provider("quicknode")

@@ -1,15 +1,15 @@
-import re
 import pytest
+from ape.api import TraceAPI
 from ape.exceptions import ContractLogicError, ProviderError
 from ape.types import LogFilter
 from hexbytes import HexBytes
 from web3.exceptions import ContractLogicError as Web3ContractLogicError
-from ape.api import TraceAPI
-from ape_quicknode.trace import QuickNodeTransactionTrace
-from ape_quicknode.exceptions import QuickNodeProviderError
+
 from ape_quicknode.exceptions import MissingAuthTokenError, QuickNodeProviderError
+from ape_quicknode.trace import QuickNodeTransactionTrace
 
 TXN_HASH = "0x3cef4aaa52b97b6b61aa32b3afcecb0d14f7862ca80fdc76504c37a9374645c4"
+
 
 @pytest.fixture
 def log_filter():
@@ -25,6 +25,7 @@ def log_filter():
             ],
         ],
     )
+
 
 @pytest.fixture
 def block():
@@ -43,6 +44,7 @@ def block():
         "difficulty": 131072,
         "totalDifficulty": 131072,
     }
+
 
 @pytest.fixture
 def receipt():
@@ -83,12 +85,13 @@ def receipt():
         "value": 0,
     }
 
+
 def test_when_no_auth_token_raises_error(missing_token, quicknode_provider):
     with pytest.raises(MissingAuthTokenError) as excinfo:
         quicknode_provider.connect()
     assert "QUICKNODE_SUBDOMAIN" in str(excinfo.value)
     assert "QUICKNODE_AUTH_TOKEN" in str(excinfo.value)
-    
+
 
 def test_send_transaction_reverts(token, quicknode_provider, mock_web3, transaction):
     expected_revert_message = "EXPECTED REVERT MESSAGE"
@@ -100,12 +103,14 @@ def test_send_transaction_reverts(token, quicknode_provider, mock_web3, transact
     with pytest.raises(ContractLogicError, match=expected_revert_message):
         quicknode_provider.send_transaction(transaction)
 
+
 def test_send_transaction_reverts_no_message(token, quicknode_provider, mock_web3, transaction):
     mock_web3.eth.send_raw_transaction.side_effect = Web3ContractLogicError("execution reverted")
     quicknode_provider._web3 = mock_web3
 
     with pytest.raises(ContractLogicError, match="Transaction failed."):
         quicknode_provider.send_transaction(transaction)
+
 
 def test_estimate_gas_would_revert(token, quicknode_provider, mock_web3, transaction):
     expected_revert_message = "EXPECTED REVERT MESSAGE"
@@ -117,6 +122,7 @@ def test_estimate_gas_would_revert(token, quicknode_provider, mock_web3, transac
     with pytest.raises(ContractLogicError, match=expected_revert_message):
         quicknode_provider.estimate_gas_cost(transaction)
 
+
 def test_estimate_gas_would_revert_no_message(token, quicknode_provider, mock_web3, transaction):
     mock_web3.eth.estimate_gas.side_effect = Web3ContractLogicError("execution reverted")
     quicknode_provider._web3 = mock_web3
@@ -124,13 +130,16 @@ def test_estimate_gas_would_revert_no_message(token, quicknode_provider, mock_we
     with pytest.raises(ContractLogicError, match="Transaction failed."):
         quicknode_provider.estimate_gas_cost(transaction)
 
+
 def test_get_contract_logs(networks, quicknode_provider, mock_web3, block, log_filter):
+    _ = quicknode_provider.chain_id  # Make sure this has been called _before_ setting mock.
     mock_web3.eth.get_block.return_value = block
     quicknode_provider._web3 = mock_web3
     networks.active_provider = quicknode_provider
     actual = [x for x in quicknode_provider.get_contract_logs(log_filter)]
 
     assert actual == []
+
 
 def test_unsupported_network(quicknode_provider, monkeypatch):
     monkeypatch.setenv("QUICKNODE_SUBDOMAIN", "test_subdomain")
@@ -141,6 +150,7 @@ def test_unsupported_network(quicknode_provider, monkeypatch):
     with pytest.raises(ProviderError, match="Unsupported network:"):
         quicknode_provider.uri
 
+
 def test_quicknode_provider_error(quicknode_provider, mock_web3):
     error_message = "QuickNode API error"
     mock_web3.provider.make_request.side_effect = QuickNodeProviderError(error_message)
@@ -148,7 +158,8 @@ def test_quicknode_provider_error(quicknode_provider, mock_web3):
 
     with pytest.raises(QuickNodeProviderError, match=error_message):
         quicknode_provider.make_request("eth_blockNumber", [])
-        
+
+
 def test_get_transaction_trace(networks, quicknode_provider, mock_web3, receipt):
     tx_hash = "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
     mock_trace_data = {
@@ -160,9 +171,9 @@ def test_get_transaction_trace(networks, quicknode_provider, mock_web3, receipt)
     mock_web3.eth.wait_for_transaction_receipt.return_value = receipt
     quicknode_provider._web3 = mock_web3
     networks.active_provider = quicknode_provider
-    
+
     trace = quicknode_provider.get_transaction_trace(tx_hash)
-    
+
     assert isinstance(trace, QuickNodeTransactionTrace)
     assert isinstance(trace, TraceAPI)
     assert trace.transaction_hash == tx_hash

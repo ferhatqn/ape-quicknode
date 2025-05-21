@@ -1,7 +1,6 @@
 import os
-from collections.abc import Iterable
-from typing import Any, Optional
-from pydantic import BaseModel, Field
+from typing import TYPE_CHECKING, Any, Optional
+
 from ape.api import ReceiptAPI, TraceAPI, TransactionAPI, UpstreamProvider
 from ape.exceptions import (
     APINotImplementedError,
@@ -9,37 +8,51 @@ from ape.exceptions import (
     ProviderError,
     VirtualMachineError,
 )
-from ape.types import BlockID
 from ape_ethereum.provider import Web3Provider
-from ape_ethereum.transactions import AccessList
 from eth_typing import HexStr
+from pydantic import BaseModel
 from requests import HTTPError
 from web3 import HTTPProvider, Web3
 from web3.exceptions import ContractLogicError as Web3ContractLogicError
 from web3.gas_strategies.rpc import rpc_gas_price_strategy
-from web3.middleware import geth_poa_middleware
+
+try:
+    from web3.middleware import ExtraDataToPOAMiddleware  # type: ignore
+except ImportError:
+    from web3.middleware import geth_poa_middleware as ExtraDataToPOAMiddleware  # type: ignore
+
 from web3.types import RPCEndpoint
 
 from .constants import QUICKNODE_NETWORKS
-from .exceptions import QuickNodeFeatureNotAvailable, QuickNodeProviderError, MissingAuthTokenError
+from .exceptions import MissingAuthTokenError, QuickNodeFeatureNotAvailable, QuickNodeProviderError
 from .trace import QuickNodeTransactionTrace
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
+
+    from ape.types import BlockID
+    from ape_ethereum.transactions import AccessList
 
 DEFAULT_ENVIRONMENT_VARIABLE_NAMES = ("QUICKNODE_SUBDOMAIN", "QUICKNODE_AUTH_TOKEN")
 
 NETWORKS_SUPPORTING_WEBSOCKETS = ("ethereum", "arbitrum", "base", "optimism", "polygon")
 
+# Flashbots will try to publish private transactions for 25 blocks.
+PRIVATE_TX_BLOCK_WAIT = 25
+
+
 class QuickNode(Web3Provider, UpstreamProvider, BaseModel):
-    name: str = Field(default="QuickNode")
+    name: str = "QuickNode"
 
     def __init__(self, network: Any, name: str = "QuickNode", **data):
         super().__init__(network=network, name=name, **data)
         self._web3 = None
         self.network_uris = {}
-        
+
     @property
     def provider_name(self) -> str:
         return self.name
-        
+
     network_uris: dict[tuple, str] = {}
 
     @property
@@ -58,7 +71,10 @@ class QuickNode(Web3Provider, UpstreamProvider, BaseModel):
         if not subdomain or not auth_token:
             raise MissingAuthTokenError(DEFAULT_ENVIRONMENT_VARIABLE_NAMES)
 
-        if ecosystem_name not in QUICKNODE_NETWORKS or network_name not in QUICKNODE_NETWORKS[ecosystem_name]:
+        if (
+            ecosystem_name not in QUICKNODE_NETWORKS
+            or network_name not in QUICKNODE_NETWORKS[ecosystem_name]
+        ):
             raise ProviderError(f"Unsupported network: {ecosystem_name} - {network_name}")
 
         uri_template = QUICKNODE_NETWORKS[ecosystem_name][network_name]
@@ -88,7 +104,7 @@ class QuickNode(Web3Provider, UpstreamProvider, BaseModel):
         self._web3 = Web3(HTTPProvider(self.uri))
         try:
             if self.network.ecosystem.name in ["optimism", "base", "polygon"]:
-                self._web3.middleware_onion.inject(geth_poa_middleware, layer=0)
+                self._web3.middleware_onion.inject(ExtraDataToPOAMiddleware, layer=0)
 
             self._web3.eth.set_gas_price_strategy(rpc_gas_price_strategy)
         except Exception as err:
@@ -104,8 +120,10 @@ class QuickNode(Web3Provider, UpstreamProvider, BaseModel):
 
     def get_transaction_trace(self, transaction_hash: str, **kwargs) -> TraceAPI:
         if not transaction_hash.startswith("0x"):
-            raise QuickNodeProviderError("Transaction hash must be a hexadecimal string starting with '0x'")
-        
+            raise QuickNodeProviderError(
+                "Transaction hash must be a hexadecimal string starting with '0x'"
+            )
+
         return QuickNodeTransactionTrace(transaction_hash=transaction_hash, provider=self, **kwargs)
 
     def get_virtual_machine_error(self, exception: Exception, **kwargs) -> VirtualMachineError:
@@ -138,14 +156,14 @@ class QuickNode(Web3Provider, UpstreamProvider, BaseModel):
         return VirtualMachineError(message=message, txn=txn)
 
     def create_access_list(
-        self, transaction: TransactionAPI, block_id: Optional[BlockID] = None
-    ) -> list[AccessList]:
+        self, transaction: TransactionAPI, block_id: Optional["BlockID"] = None
+    ) -> list["AccessList"]:
         if self.network.ecosystem.name == "polygon-zkevm":
             raise APINotImplementedError()
 
         return super().create_access_list(transaction, block_id=block_id)
 
-    def make_request(self, rpc: str, parameters: Optional[Iterable] = None) -> Any:
+    def make_request(self, rpc: str, parameters: Optional["Iterable"] = None) -> Any:
         parameters = parameters or []
         try:
             result = self.web3.provider.make_request(RPCEndpoint(rpc), parameters)
